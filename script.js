@@ -1,3 +1,4 @@
+
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -496,4 +497,113 @@
   const LIFT = -44;
   function tp(t) { const r = canvas.getBoundingClientRect(); return { x: t.clientX - r.left, y: t.clientY - r.top }; }
 
-  canvas.addEventListener('t
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault(); lastInteract = performance.now();
+    if (merged) {
+      for (const t of e.changedTouches) {
+        const p = tp(t);
+        if (e.touches.length >= 2) {
+          if (soulA.touchId === null) {
+            soulA.isDragging = true; soulA.touchId = t.identifier;
+            soulA.tx = p.x; soulA.ty = p.y + LIFT;
+          } else if (soulB.touchId === null) {
+            soulB.isDragging = true; soulB.touchId = t.identifier;
+            soulB.tx = p.x; soulB.ty = p.y + LIFT;
+          }
+        } else {
+          if (soulA.touchId === null) {
+            soulA.isDragging = true; soulA.touchId = t.identifier;
+            soulA.tx = p.x; soulA.ty = p.y + LIFT;
+            soulB.tx = p.x; soulB.ty = p.y + LIFT;
+            mergeLock.x = p.x; mergeLock.y = p.y + LIFT;
+          }
+        }
+      }
+      return;
+    }
+    for (const t of e.changedTouches) {
+      const p = tp(t);
+      const dA = Math.hypot(soulA.x - p.x, soulA.y - p.y), dB = Math.hypot(soulB.x - p.x, soulB.y - p.y);
+      if (dA < dB) {
+        if (dA < 90 && soulA.touchId === null) { soulA.isDragging = true; soulA.touchId = t.identifier; soulA.tx = p.x; soulA.ty = p.y + LIFT; }
+        else if (dB < 90 && soulB.touchId === null) { soulB.isDragging = true; soulB.touchId = t.identifier; soulB.tx = p.x; soulB.ty = p.y + LIFT; }
+      } else {
+        if (dB < 90 && soulB.touchId === null) { soulB.isDragging = true; soulB.touchId = t.identifier; soulB.tx = p.x; soulB.ty = p.y + LIFT; }
+        else if (dA < 90 && soulA.touchId === null) { soulA.isDragging = true; soulA.touchId = t.identifier; soulA.tx = p.x; soulA.ty = p.y + LIFT; }
+      }
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault(); lastInteract = performance.now();
+    const twoFinger = merged && e.touches.length >= 2 && soulA.isDragging && soulB.isDragging;
+    for (const t of e.touches) {
+      const p = tp(t);
+      if (soulA.isDragging && soulA.touchId === t.identifier) {
+        soulA.tx = p.x; soulA.ty = p.y + LIFT;
+
+        if (merged && !twoFinger) { soulB.tx = p.x; soulB.ty = p.y + LIFT; mergeLock.x = p.x; mergeLock.y = p.y + LIFT; }
+      }
+      if (soulB.isDragging && soulB.touchId === t.identifier) {
+        soulB.tx = p.x; soulB.ty = p.y + LIFT;
+        if (merged && !twoFinger) { soulA.tx = p.x; soulA.ty = p.y + LIFT; mergeLock.x = p.x; mergeLock.y = p.y + LIFT; }
+      }
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (soulA.touchId === t.identifier) { soulA.isDragging = false; soulA.touchId = null; }
+      if (soulB.touchId === t.identifier) { soulB.isDragging = false; soulB.touchId = null; }
+    }
+    if (merged && !soulA.isDragging && !soulB.isDragging) {
+      const pullDist = Math.hypot(soulB.tx - soulA.tx, soulB.ty - soulA.ty);
+      if (pullDist > 120) beginSeparation();
+      else {
+
+        soulA.tx = mergeLock.x; soulA.ty = mergeLock.y;
+        soulB.tx = mergeLock.x; soulB.ty = mergeLock.y;
+      }
+    }
+  });
+  let activeNode = null;
+  let mouseRight = false;
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('mousedown', e => {
+    lastInteract = performance.now();
+    if (e.button === 2) { mouseRight = true; }
+    if (merged) {
+      if (e.button === 2) {
+        beginSeparation();
+        return;
+      }
+
+      soulA.isDragging = true; soulB.isDragging = true; activeNode = soulA;
+      return;
+    }
+    const dA = Math.hypot(soulA.x - e.clientX, soulA.y - e.clientY);
+    const dB = Math.hypot(soulB.x - e.clientX, soulB.y - e.clientY);
+    if (dA < dB && dA < 70) { soulA.isDragging = true; activeNode = soulA; }
+    else if (dB < 70) { soulB.isDragging = true; activeNode = soulB; }
+  });
+  window.addEventListener('mousemove', e => {
+    lastInteract = performance.now();
+    if (activeNode) {
+      activeNode.tx = e.clientX; activeNode.ty = e.clientY;
+      if (merged) {
+        soulA.tx = e.clientX; soulA.ty = e.clientY;
+        soulB.tx = e.clientX; soulB.ty = e.clientY;
+        mergeLock.x = e.clientX; mergeLock.y = e.clientY;
+      }
+    } else { shy(soulA, e.clientX, e.clientY); shy(soulB, e.clientX, e.clientY); }
+  });
+  window.addEventListener('mouseup', e => { if (e.button === 2) { mouseRight = false; } if (activeNode) { activeNode.isDragging = false; soulA.isDragging = false; soulB.isDragging = false; activeNode = null; } });
+  window.addEventListener('deviceorientation', e => { tiltX = (e.gamma || 0) * .5; tiltY = (e.beta || 0) * .25; });
+  window.addEventListener('resize', resize);
+  document.getElementById('replayBtn').addEventListener('click', () => {
+    finaleEl.classList.remove('visible');
+    document.getElementById('replayBtn').classList.remove('visible');
+    setTimeout(() => resetAll(), 400);
+  });
+  resize();
+  requestAnimationFrame(render);
+})();
